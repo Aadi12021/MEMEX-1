@@ -1,0 +1,21 @@
+{
+  "user_profile": {},
+  "project_metadata": {
+    "project_name": "MEMEX-1",
+    "description": "A multi-tier memory daemon developed in Python, designed to optimize token usage through a tiered architecture.",
+    "core_architecture": {
+      "language": "Python",
+      "type": "asynchronous microservices"
+    },
+    "system_type": "agentic",
+    "database_selection": {
+      "selected_database": "ChromaDB",
+      "reasons": [
+        "Rapid local deployment capabilities",
+        "Minimal cloud overhead",
+        "Local binary execution reducing latency"
+      ]
+    }
+  },
+  "global_facts": []
+}

@@ -1,0 +1,11 @@
+# Ignore local environment variables / API keys
+.env
+*.env
+
+# Ignore your local ChromaDB persistent binaries and logs
+.memex_storage/
+__pycache__/
+*.pyc
+
+# Ignore OS metadata files
+.DS_Store
