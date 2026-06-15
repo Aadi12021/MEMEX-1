@@ -21,14 +21,62 @@ Verdict:
 
 import json
 import os
+import re
 from typing import Dict, Any
-from openai import OpenAI
+
+from openai import OpenAI, APIError, APITimeoutError, RateLimitError
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 from monitor_schemas import MetaScore
+
+
+# Retry on transient OpenAI errors only
+RETRYABLE = (APIError, APITimeoutError, RateLimitError)
+
+FALLBACK_SCORES = {
+    "confidence": 0.5,
+    "completeness": 0.5,
+    "consistency": 0.5,
+    "reasoning": "Fallback scores applied — API call failed after retries.",
+}
+
+
+def _parse_json_safe(raw: str) -> dict:
+    """
+    Robustly extracts a JSON object from a string.
+    Handles markdown fences, leading/trailing text, and malformed output.
+    Falls back to FALLBACK_SCORES if nothing can be parsed.
+    """
+    # Strip markdown fences
+    raw = re.sub(r"```(?:json)?", "", raw).strip("`").strip()
+
+    # Try direct parse first
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # Try to extract first {...} block
+    match = re.search(r"\{.*?\}", raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    print("  ⚠️  [META-EVAL] JSON parsing failed — applying fallback scores.")
+    return FALLBACK_SCORES
 
 
 class MetaEvaluator:
     """
     Runs metacognitive monitoring and control on a candidate response.
+    All OpenAI calls retry up to 3 times with exponential backoff.
+    JSON parsing is safe — never raises on malformed output.
     """
 
     def __init__(self, profile_path: str = "./semantic_profile.json"):
@@ -41,10 +89,40 @@ class MetaEvaluator:
                 return json.load(f)
         return {}
 
+    @retry(
+        retry=retry_if_exception_type(RETRYABLE),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(3),
+        reraise=False,
+    )
+    def _call_score_api(self, prompt: str) -> str:
+        """Isolated API call so retry decorator only wraps the network hop."""
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        return response.choices[0].message.content.strip()
+
+    @retry(
+        retry=retry_if_exception_type(RETRYABLE),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(3),
+        reraise=False,
+    )
+    def _call_revise_api(self, prompt: str) -> str:
+        """Isolated API call for the revision pass."""
+        result = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+        return result.choices[0].message.content.strip()
+
     def _score(self, query: str, response: str, profile: Dict[str, Any]) -> dict:
         """
         Calls GPT-4o-mini to score the response on all three dimensions.
-        Returns a dict with scores and reasoning.
+        Returns a dict with scores and reasoning. Never raises.
         """
         profile_str = json.dumps({k: v for k, v in profile.items() if v}, indent=None)
 
@@ -75,19 +153,17 @@ Return this exact JSON structure:
   "reasoning": "one sentence explanation of the verdict"
 }}"""
 
-        response_obj = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-        )
-        raw = response_obj.choices[0].message.content.strip()
-        if raw.startswith("```"):
-            raw = raw.strip("```json").strip("```").strip()
-        return json.loads(raw)
+        try:
+            raw = self._call_score_api(prompt)
+            return _parse_json_safe(raw)
+        except Exception as e:
+            print(f"  ⚠️  [META-EVAL] Scoring API failed after retries: {e}")
+            return FALLBACK_SCORES
 
     def _revise(self, query: str, response: str, reasoning: str) -> str:
         """
         Attempts one revision pass if verdict is REVISE.
+        Returns original response if the API call fails.
         """
         prompt = f"""A response was flagged for revision by a metacognitive evaluator.
 
@@ -99,17 +175,16 @@ ISSUE IDENTIFIED: {reasoning}
 
 Rewrite the response to fix the identified issue. Be concise. Return only the revised response text."""
 
-        result = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
-        return result.choices[0].message.content.strip()
+        try:
+            return self._call_revise_api(prompt)
+        except Exception as e:
+            print(f"  ⚠️  [META-EVAL] Revision API failed after retries: {e}. Keeping original response.")
+            return response
 
     def evaluate(self, query: str, response: str) -> MetaScore:
         """
         Main entry point. Scores a response and returns a MetaScore
-        with verdict and optional revision.
+        with verdict and optional revision. Never raises.
         """
         profile = self._read_profile()
         scores = self._score(query, response, profile)
@@ -136,7 +211,7 @@ Rewrite the response to fix the identified issue. Be concise. Return only the re
         if verdict == "REVISE":
             print("  🔄 [META-EVAL] Triggering revision pass...")
             revised_response = self._revise(query, response, reasoning)
-            print(f"  ✅ [META-EVAL] Revision complete.")
+            print("  ✅ [META-EVAL] Revision complete.")
 
         return MetaScore(
             confidence=confidence,

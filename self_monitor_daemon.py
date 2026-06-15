@@ -29,7 +29,13 @@ Cognitive science grounding:
 
 import os
 from typing import Optional
-from openai import OpenAI
+from openai import OpenAI, APIError, APITimeoutError, RateLimitError
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 from memory_tier1 import Tier1WorkingMemory
 from memory_tier2 import Tier2EpisodicMemory
@@ -87,23 +93,37 @@ class SelfMonitorDaemon:
         self._suppressed_count = 0
         self._tier3_updates    = 0
 
+    @retry(
+        retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        stop=stop_after_attempt(3),
+        reraise=False,
+    )
     def _generate_response(self, compiled_context: str) -> str:
-        """Generates a response from the compiled MEMEX-1 context."""
-        result = self.client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a helpful AI assistant operating within a cognitive architecture. "
-                        "Use the provided memory context to answer accurately and concisely."
-                    ),
-                },
-                {"role": "user", "content": compiled_context},
-            ],
-            temperature=0.2,
-        )
-        return result.choices[0].message.content.strip()
+        """
+        Generates a response from the compiled MEMEX-1 context.
+        Retries up to 3 times with exponential backoff on transient API errors.
+        Falls back to a safe default message if all retries fail.
+        """
+        try:
+            result = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a helpful AI assistant operating within a cognitive architecture. "
+                            "Use the provided memory context to answer accurately and concisely."
+                        ),
+                    },
+                    {"role": "user", "content": compiled_context},
+                ],
+                temperature=0.2,
+            )
+            return result.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"  ⚠️  [MONITOR] Response generation failed after retries: {e}")
+            return "I was unable to generate a response due to a temporary API issue. Please try again."
 
     def _adjust_thresholds(self, recommended_token_limit: int, recommended_surprise_threshold: float):
         """Applies load-driven threshold adjustments to PERCEPT-1 and Tier 1."""
