@@ -6,6 +6,8 @@
 .memex_storage/
 __pycache__/
 *.pyc
+semantic_profile.json
 
 # Ignore OS metadata files
 .DS_Store
+
