@@ -156,6 +156,9 @@ class SelfMonitorDaemon:
         print("  SELF-MONITOR DAEMON — cycle initiated")
         print("="*60)
 
+        # Start latency clock for load monitor
+        self.load_monitor.start_cycle()
+
         modality_count = 1
         if structured_data: modality_count += 1
         if image_base64:    modality_count += 1
