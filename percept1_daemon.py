@@ -21,6 +21,7 @@ MEMEX-1 integration:
 """
 
 from typing import Optional
+import config
 from multimodal_binder import MultimodalBinder
 from predictive_coder import PredictiveCoder
 from attention_filter import AttentionFilter
@@ -46,10 +47,10 @@ class Percept1Daemon:
 
     def __init__(
         self,
-        profile_path: str = "./semantic_profile.json",
-        high_threshold: float = 0.6,
-        mid_threshold: float = 0.25,
-        embedding_model: str = "all-MiniLM-L6-v2",
+        profile_path: str = config.PROFILE_PATH,
+        high_threshold: float = config.PERCEPT_HIGH_THRESHOLD,
+        mid_threshold: float = config.PERCEPT_MID_THRESHOLD,
+        embedding_model: str = config.EMBEDDING_MODEL,
     ):
         self.binder = MultimodalBinder()
         self.coder = PredictiveCoder(

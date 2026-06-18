@@ -6,6 +6,7 @@ import numpy as np
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 
+import config
 from percept_schemas import PerceptObject
 
 
@@ -26,12 +27,12 @@ class PredictiveCoder:
 
     def __init__(
         self,
-        profile_path: str = "./semantic_profile.json",
-        embedding_model: str = "all-MiniLM-L6-v2",
+        profile_path: str = config.PROFILE_PATH,
+        embedding_model: str = config.EMBEDDING_MODEL,
     ):
         self.profile_path = profile_path
         self.encoder = SentenceTransformer(embedding_model)
-        self.openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
 
     def _read_tier3_profile(self) -> Dict[str, Any]:
         """Reads the MEMEX-1 Tier 3 semantic profile from disk."""
@@ -69,7 +70,7 @@ class PredictiveCoder:
         logging, debugging, and feeding back into Tier 3 updates.
         """
         response = self.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=config.MODEL_FAST,
             max_tokens=256,
             messages=[
                 {

@@ -2,6 +2,7 @@ import json
 import os
 from openai import OpenAI
 from percept_schemas import PerceptObject, RawPerceptInput
+import config
 
 
 class MultimodalBinder:
@@ -17,7 +18,7 @@ class MultimodalBinder:
     """
 
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
 
     def _describe_image(self, image_base64: str, media_type: str) -> str:
         """
@@ -25,7 +26,7 @@ class MultimodalBinder:
         description suitable for embedding and comparison.
         """
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=config.MODEL_VISION,
             max_tokens=512,
             messages=[
                 {

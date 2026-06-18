@@ -33,6 +33,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 import chromadb
+import config
 from openai import OpenAI, APIError, APITimeoutError, RateLimitError
 from tenacity import (
     retry,
@@ -90,12 +91,12 @@ class MetaEvaluator:
 
     def __init__(
         self,
-        profile_path: str = "./semantic_profile.json",
-        persist_directory: str = "./.memex_storage",
-        history_n_results: int = 3,
+        profile_path: str = config.PROFILE_PATH,
+        persist_directory: str = config.PERSIST_DIRECTORY,
+        history_n_results: int = config.META_HISTORY_N_RESULTS,
     ):
         self.profile_path = profile_path
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
         self.history_n_results = history_n_results
 
         # ChromaDB collection for MetaScore history
@@ -167,7 +168,7 @@ class MetaEvaluator:
     def _call_score_api(self, prompt: str) -> str:
         """Isolated API call so retry decorator only wraps the network hop."""
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=config.MODEL_FAST,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
         )
@@ -182,7 +183,7 @@ class MetaEvaluator:
     def _call_revise_api(self, prompt: str) -> str:
         """Isolated API call for the revision pass."""
         result = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=config.MODEL_FAST,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
@@ -291,12 +292,16 @@ Rewrite the response to fix the identified issue. Be concise. Return only the re
         consistency  = float(scores.get("consistency", 0.5))
         reasoning    = scores.get("reasoning", "")
 
-        # Weighted composite: confidence 40%, completeness 35%, consistency 25%
-        composite = round(0.4 * confidence + 0.35 * completeness + 0.25 * consistency, 4)
+        composite = round(
+            config.META_WEIGHT_CONFIDENCE * confidence
+            + config.META_WEIGHT_COMPLETENESS * completeness
+            + config.META_WEIGHT_CONSISTENCY * consistency,
+            4,
+        )
 
-        if composite >= 0.7:
+        if composite >= config.META_PASS_THRESHOLD:
             verdict = "PASS"
-        elif composite >= 0.4:
+        elif composite >= config.META_REVISE_THRESHOLD:
             verdict = "REVISE"
         else:
             verdict = "ESCALATE"

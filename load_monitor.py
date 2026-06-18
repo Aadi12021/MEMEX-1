@@ -28,29 +28,15 @@ import time
 from collections import deque
 from typing import Optional
 import tiktoken
+import config
 from monitor_schemas import LoadState
 
 
-# Default Tier 1 token limits per load level
-TOKEN_LIMITS = {
-    "LOW":      2000,
-    "MODERATE": 1500,
-    "HIGH":     1000,
-    "CRITICAL": 600,
-}
-
-# Adjusted PERCEPT-1 HIGH salience thresholds per load level
-# Under high load, raise the bar for what gets promoted to memory
-SURPRISE_THRESHOLDS = {
-    "LOW":      0.6,
-    "MODERATE": 0.65,
-    "HIGH":     0.75,
-    "CRITICAL": 0.85,
-}
-
-# Latency above this (seconds) contributes to intrinsic load
-LATENCY_BASELINE_S = 1.0
-LATENCY_MAX_S      = 10.0
+# Imported from config
+TOKEN_LIMITS         = config.LOAD_TOKEN_LIMITS
+SURPRISE_THRESHOLDS  = config.LOAD_SURPRISE_THRESHOLDS
+LATENCY_BASELINE_S   = config.LOAD_LATENCY_BASELINE
+LATENCY_MAX_S        = config.LOAD_LATENCY_MAX
 
 
 class LoadMonitor:
@@ -65,7 +51,7 @@ class LoadMonitor:
     def __init__(
         self,
         model_encoding: str = "cl100k_base",
-        window_size: int = 5,
+        window_size: int = config.LOAD_WINDOW_SIZE,
     ):
         self.encoder = tiktoken.get_encoding(model_encoding)
         self.window_size = window_size

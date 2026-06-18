@@ -30,6 +30,7 @@ Cognitive science grounding:
 import os
 from typing import Optional
 from openai import OpenAI, APIError, APITimeoutError, RateLimitError
+import config
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -63,10 +64,10 @@ class SelfMonitorDaemon:
 
     def __init__(
         self,
-        profile_path: str = "./semantic_profile.json",
-        persist_directory: str = "./.memex_storage",
-        base_token_limit: int = 2000,
-        base_surprise_threshold: float = 0.6,
+        profile_path: str = config.PROFILE_PATH,
+        persist_directory: str = config.PERSIST_DIRECTORY,
+        base_token_limit: int = config.TIER1_BASE_TOKEN_LIMIT,
+        base_surprise_threshold: float = config.PERCEPT_HIGH_THRESHOLD,
     ):
         self.profile_path = profile_path
         self.base_token_limit = base_token_limit
@@ -86,7 +87,7 @@ class SelfMonitorDaemon:
         self.meta_evaluator = MetaEvaluator(profile_path=profile_path)
 
         # OpenAI for response generation
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = OpenAI(api_key=config.OPENAI_API_KEY)
 
         # Cycle tracking for load signals
         self._percept_count    = 0
@@ -107,7 +108,7 @@ class SelfMonitorDaemon:
         """
         try:
             result = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=config.MODEL_FAST,
                 messages=[
                     {
                         "role": "system",
